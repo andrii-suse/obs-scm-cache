@@ -1,0 +1,2 @@
+
+__workdir/db/sql "$@"

@@ -1,0 +1,20 @@
+FROM opensuse/leap:16.0
+ENV container docker
+
+ENV LANG en_US.UTF-8
+
+RUN zypper ar -f http://download.opensuse.org/repositories/devel:/tools:/scm/16.0 gt
+RUN zypper ar -f http://download.opensuse.org/repositories/home:/andriinikitin:/environ/rpm env
+RUN zypper --gpg-auto-import-keys ref
+
+# install MirrorCache here to fetch all dependencies
+RUN zypper -vvv -n install git gitea mariadb-server mariadb-client vim curl environ environ-gitea sudo postgresql postgresql-server \
+    python3-uvicorn python3-fastapi python3-pydantic-core python3-pydantic-settings python3-sqlalchemy python3-asyncpg python3-urllib3
+
+WORKDIR /opt/project
+ENV TZ UTC
+
+COPY hacks/02-chmod.sh /opt/
+RUN bash -xe /opt/02-chmod.sh
+
+ENTRYPOINT ["/usr/bin/tail", "-f", "/dev/null"]
