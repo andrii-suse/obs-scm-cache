@@ -9,7 +9,7 @@ from sqlalchemy import select
 from model.model import Scmpkg, Pkg, Scmrepo
 
 async def search(db_session: AsyncSession, q: str):
-    pkgs = (await db_session.scalars(select(Scmrepo.uri).join(Scmpkg.pkg).join(Scmpkg.scmrepo).where(Pkg.name == q))).all()
+    pkgs = (await db_session.scalars(select(Scmrepo).join(Scmpkg.pkg).join(Scmpkg.scmrepo).where(Pkg.name == q))).all()
 
     # pkgs = (await db_session.scalars(select(Pkg).where(Pkg.name == q))).first()
     return pkgs

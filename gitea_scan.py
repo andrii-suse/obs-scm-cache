@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 http = urllib3.PoolManager()
 
 
-def git_tree_scan(url, loop):
-    match = re.match(r"^(https?://)?([^/]+)/([^/]+)/([^/#]+)(#([^/]+))?$", url)
+def git_tree_scan(uri, loop):
+    match = re.match(r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", uri)
     if not match:
         raise ValueError(f"Invalid repo url: {url}")
 
@@ -28,15 +28,22 @@ def git_tree_scan(url, loop):
     host = match.group(2)
     owner = match.group(3)
     repo = match.group(4)
-    sha = match.group(6)
+    sha = match.group(8)
+    sha_guessed = 0
 
     if not sha:
         sha = "main"
+        sha_guessed = 1
     if not proto:
         proto = "https://"
 
     req_url = f"{proto}{host}/api/v1/repos/{owner}/{repo}/git/trees/{sha}"
     response = http.request("GET", req_url)
+
+    if response.status > 299 or response.status < 200 and sha_guessed:
+        req_url = f"{proto}{host}/api/v1/repos/{owner}/{repo}/git/trees/master"
+        response = http.request("GET", req_url)
+
     if response.status > 299 or response.status < 200:
         print(f"request {req_url} failed ({response.status}:{response.reason})")
         return
@@ -66,12 +73,11 @@ def git_tree_scan(url, loop):
 
     if packages:
         asyncio.run_coroutine_threadsafe(
-            scm_db_fill(host, f"{owner}/{repo}", packages), loop
+            scm_db_fill(host, owner, repo, sha, packages), loop
         ).result()
 
 
-async def scm_db_fill(host, uri, pkgs):
-    print("scm_db_fill")
+async def scm_db_fill(host, owner, repo, sha, pkgs):
 
     async for conn in get_db_session():
         # TODO!!!! how to use parameter here to avoid SQL injection???
@@ -82,7 +88,7 @@ async def scm_db_fill(host, uri, pkgs):
         )
         await conn.execute(
             text(
-                f"insert into scmrepo(scmhost_id, uri) select (select id from scmhost where hostname = '{host}'), '{uri}' on conflict do nothing"
+                f"insert into scmrepo(scmhost_id, org, repo, branch) select (select id from scmhost where hostname = '{host}'), '{owner}', '{repo}', '{sha}' on conflict do nothing"
             )
         )  # , $host, f"{owner}/{repo}")
         for pkg in pkgs:
@@ -91,7 +97,7 @@ async def scm_db_fill(host, uri, pkgs):
             )  # , $host, f"{owner}/{repo}")
             await conn.execute(
                 text(
-                    f"insert into scmpkg(scmrepo_id, pkg_id) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = '{host}') and uri = '{uri}'), (select id from pkg where name = '{pkg}') on conflict do nothing"
+                    f"insert into scmpkg(scmrepo_id, pkg_id) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = '{host}') and org = '{owner}' and repo = '{repo}' and branch = '{sha}' ), (select id from pkg where name = '{pkg}') on conflict do nothing"
                 )
             )
 

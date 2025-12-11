@@ -7,10 +7,12 @@ create table if not exists scmhost (
 create table if not exists scmrepo (
     id serial NOT NULL PRIMARY KEY,    
     scmhost_id int references scmhost,
-    uri varchar(512) not null,
+    org varchar(512) not null,
+    repo varchar(512) not null,
+    branch varchar(512) not null,
     last_scan_at timestamp,
     deleted_at   timestamp,
-    unique(scmhost_id, uri)
+    unique(scmhost_id, org, repo, branch)
 );
 
 create table if not exists pkg (
@@ -25,3 +27,8 @@ create table if not exists scmpkg (
     last_seen_at timestamp,
     deleted_at   timestamp
 );
+
+create table if not exists obsproj (
+    name  varchar(512) PRIMARY KEY,
+    scmsync varchar(512) not null
+)

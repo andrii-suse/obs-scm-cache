@@ -63,6 +63,9 @@ in_cleanup=0
 function cleanup {
     [ "$in_cleanup" != 1 ] || return
     in_cleanup=1
+    if [ -n "$T_PAUSE_ON_EXIT" ]; then
+        read -rsn1 -p"Test completed, press any key to finish or connect to running contaier using: podman exec -it $containername bash";echo
+    fi
     if [ "$ret" != 0 ] && [ -n "$T_PAUSE_ON_FAILURE" ]; then
         read -rsn1 -p"Test failed, press any key to finish";echo
     fi

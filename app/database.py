@@ -57,7 +57,8 @@ class DatabaseSessionManager:
 
 
 print(f"Using DB url {settings.database_url}")
-sessionmanager = DatabaseSessionManager(settings.database_url, {"echo": settings.echo_sql})
+# sessionmanager = DatabaseSessionManager(settings.database_url, {"echo": settings.echo_sql})
+sessionmanager = DatabaseSessionManager(settings.database_url)
 
 
 async def get_db_session():

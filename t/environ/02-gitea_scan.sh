@@ -54,12 +54,13 @@ sleep 3 # not sure why we need it
 
 $sc/gitea_scan http://$($gt/print_address)/products/myproduct1#mybranch
 
+set -x
 
 $sc/sql_test 1 == "select count(*) from scmhost"
 $sc/sql_test $($gt/print_address) == "select hostname from scmhost"
 
 $sc/sql_test 1 == "select count(*) from scmrepo"
-$sc/sql_test products/myproduct1 == "select uri from scmrepo"
+$sc/sql_test products/myproduct1 == "select concat(org,'/',repo) from scmrepo"
 
 $sc/sql_test 1 == "select count(*) from scmpkg"
 $sc/sql_test myrepo == "select name from pkg"

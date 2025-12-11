@@ -41,11 +41,13 @@ class Scmrepo(Base):
     __table_args__ = (
         ForeignKeyConstraint(['scmhost_id'], ['scmhost.id'], name='scmrepo_scmhost_id_fkey'),
         PrimaryKeyConstraint('id', name='scmrepo_pkey'),
-        UniqueConstraint('scmhost_id', 'uri', name='scmrepo_scmhost_id_uri_key')
+        UniqueConstraint('scmhost_id', 'org', 'repo', 'branch', name='scmrepo_scmhost_id_org_repo_branch_key')
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    org: Mapped[str] = mapped_column(String(512), nullable=False)
+    repo: Mapped[str] = mapped_column(String(512), nullable=False)
+    branch: Mapped[str] = mapped_column(String(512), nullable=False)
     scmhost_id: Mapped[Optional[int]] = mapped_column(Integer)
     last_scan_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
@@ -70,4 +72,14 @@ class Scmpkg(Base):
 
     pkg: Mapped[Optional['Pkg']] = relationship('Pkg', back_populates='scmpkg')
     scmrepo: Mapped[Optional['Scmrepo']] = relationship('Scmrepo', back_populates='scmpkg')
+
+
+class Obsproj(Base):
+    __tablename__ = 'obsproj'
+    __table_args__ = (
+        PrimaryKeyConstraint('name', name='obsproj_pkey'),
+    )
+
+    name: Mapped[Optional[str]] = mapped_column(String(256))
+    scmsync: Mapped[Optional[str]] = mapped_column(String(256))
 
