@@ -8,7 +8,7 @@ devel:ALP,https://src.opensuse.org/adrianSuSE/Alp#factory
 devel:Factory:git-workflow:mold:core:git,https://src.opensuse.org/testing/_ObsPrj.git#master
 devel:gcc:prjbuild,https://src.opensuse.org/gcc/_ObsPrj.git#master
 devel:languages:clojure,https://src.opensuse.org/clojure/_ObsPrj.git#master
-devel:languages:erlang:Factory,https://src.opensuse.org/erlang/_ObsPrj.git?m#master
+devel:languages:erlang:Factory,https://src.opensuse.org/erlang/_ObsPrj.git?#master
 devel:languages:erlang,https://src.opensuse.org/erlang/_ObsPrj.git#master
 devel:languages:hare,https://src.opensuse.org/hare/_ObsPrj.git#master
 devel:languages:javascript,https://src.opensuse.org/javascript/_ObsPrj.git#master
@@ -61,12 +61,10 @@ X11:lxde,https://src.opensuse.org/lxde/_ObsPrj.git#master
 
 $sc/sql "select count(*) from scmrepo"
 
-# $sc/sql "select name from pkg"
-
-# $sc/sql "select count(*) from scmpkg"
-
-# $sc/sql "select name, scmsync, concat(scmrepo.org,'/',scmrepo.repo,'#',scmrepo.branch) from obsproj left join scmrepo on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch)"
-
 $sc/sql "select pkg.name, count(*) cnt, string_agg(obsproj.name, ',') from scmpkg join scmrepo on scmrepo_id = scmrepo.id join obsproj on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch) join pkg on pkg.id = pkg_id group by pkg.id, pkg.name order by cnt desc" | head
+
+$sc/start
+sleep 2
+$sc/curl /rest/package/search?q=7zip | grep -o '"appliance":"src.opensuse.org"'
 
 echo success

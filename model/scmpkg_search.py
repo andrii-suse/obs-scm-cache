@@ -4,12 +4,26 @@ import datetime
 from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from model.model import Scmpkg, Pkg, Scmrepo
 
 async def search(db_session: AsyncSession, q: str):
-    pkgs = (await db_session.scalars(select(Scmrepo).join(Scmpkg.pkg).join(Scmpkg.scmrepo).where(Pkg.name == q))).all()
 
-    # pkgs = (await db_session.scalars(select(Pkg).where(Pkg.name == q))).first()
-    return pkgs
+    sql = '''
+select
+obsproj.name,
+scmpkg.host as appliance, 
+scmrepo.org as project_org, scmrepo.repo as project_repo, scmrepo.branch as project_branch,
+scmpkg.org as package_org, scmpkg.repo as package_repo, scmpkg.branch as package_branch, scmpkg.sha as package_sha
+from
+pkg
+join scmpkg on pkg_id = pkg.id
+join scmrepo on scmrepo_id = scmrepo.id
+join obsproj on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch)
+where pkg.name = :pkg
+'''
+
+    cursor = await db_session.execute(text(sql), {"pkg": q})
+    rows = cursor.mappings().all()
+    return rows

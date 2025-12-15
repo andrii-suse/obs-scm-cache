@@ -45,12 +45,13 @@ git config user.name "Geeko Packager"
 git config user.email "email@example.com"
 git commit -m 'Add myrepo'
 git push origin mybranch
+
+ls -la
 )
 
 
-
 $sc/status
-sleep 3 # not sure why we need it
+sleep 1 # not sure why we need it
 
 $sc/gitea_scan http://$($gt/print_address)/products/myproduct1#mybranch
 
