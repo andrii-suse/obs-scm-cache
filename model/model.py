@@ -1,12 +1,21 @@
 from typing import Optional
 import datetime
 
-from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, UniqueConstraint
+from sqlalchemy import CHAR, DateTime, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 class Base(DeclarativeBase):
     pass
+
+
+class Obsproj(Base):
+    __tablename__ = 'obsproj'
+    __table_args__ = (
+        PrimaryKeyConstraint('name', name='obsproj_pkey'),
+    )
+
+    name: Mapped[str] = mapped_column(String(512), primary_key=True)
+    scmsync: Mapped[str] = mapped_column(String(512), nullable=False)
 
 
 class Pkg(Base):
@@ -41,13 +50,14 @@ class Scmrepo(Base):
     __table_args__ = (
         ForeignKeyConstraint(['scmhost_id'], ['scmhost.id'], name='scmrepo_scmhost_id_fkey'),
         PrimaryKeyConstraint('id', name='scmrepo_pkey'),
-        UniqueConstraint('scmhost_id', 'org', 'repo', 'branch', name='scmrepo_scmhost_id_org_repo_branch_key')
+        UniqueConstraint('scmhost_id', 'org', 'repo', 'branch', 'sha', name='scmrepo_scmhost_id_org_repo_branch_sha_key')
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     org: Mapped[str] = mapped_column(String(512), nullable=False)
     repo: Mapped[str] = mapped_column(String(512), nullable=False)
     branch: Mapped[str] = mapped_column(String(512), nullable=False)
+    sha: Mapped[str] = mapped_column(CHAR(64), nullable=False)
     scmhost_id: Mapped[Optional[int]] = mapped_column(Integer)
     last_scan_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
@@ -61,10 +71,16 @@ class Scmpkg(Base):
     __table_args__ = (
         ForeignKeyConstraint(['pkg_id'], ['pkg.id'], name='scmpkg_pkg_id_fkey'),
         ForeignKeyConstraint(['scmrepo_id'], ['scmrepo.id'], name='scmpkg_scmrepo_id_fkey'),
-        PrimaryKeyConstraint('id', name='scmpkg_pkey')
+        PrimaryKeyConstraint('id', name='scmpkg_pkey'),
+        UniqueConstraint('scmrepo_id', 'pkg_id', name='scmpkg_scmrepo_id_pkg_id_key')
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    host: Mapped[str] = mapped_column(String(512), nullable=False)
+    org: Mapped[str] = mapped_column(String(512), nullable=False)
+    repo: Mapped[str] = mapped_column(String(512), nullable=False)
+    branch: Mapped[str] = mapped_column(String(512), nullable=False)
+    sha: Mapped[str] = mapped_column(String(64), nullable=False)
     scmrepo_id: Mapped[Optional[int]] = mapped_column(Integer)
     pkg_id: Mapped[Optional[int]] = mapped_column(Integer)
     last_seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
@@ -72,14 +88,3 @@ class Scmpkg(Base):
 
     pkg: Mapped[Optional['Pkg']] = relationship('Pkg', back_populates='scmpkg')
     scmrepo: Mapped[Optional['Scmrepo']] = relationship('Scmrepo', back_populates='scmpkg')
-
-
-class Obsproj(Base):
-    __tablename__ = 'obsproj'
-    __table_args__ = (
-        PrimaryKeyConstraint('name', name='obsproj_pkey'),
-    )
-
-    name: Mapped[Optional[str]] = mapped_column(String(256))
-    scmsync: Mapped[Optional[str]] = mapped_column(String(256))
-

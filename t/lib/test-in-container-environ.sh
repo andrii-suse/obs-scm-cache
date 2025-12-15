@@ -54,7 +54,7 @@ dockerfile=$thisdir/Dockerfile.environ
 # podman stop -t 0 "$containername" >&/dev/null || :
 
 map_port=""
-[ -z "$EXPOSE_PORT" ] || map_port="-p 80:$EXPOSE_PORT"
+[ -z "$T_EXPOSE_PORT" ] || map_port="-p $T_EXPOSE_PORT"
 
 podman run $map_port --rm --name "$containername" -d -v"$thisdir/../../..":/opt/project  --userns keep-id:uid=$(id -u),gid=$(id -g) -- $ident.image
 

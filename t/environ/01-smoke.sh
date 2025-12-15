@@ -8,8 +8,10 @@ $sc/status
 
 $sc/sql "insert into pkg(name) select 'vim' union select 'emacs'"
 $sc/sql "insert into scmhost(hostname) select 'src.mytest.org'"
-$sc/sql "insert into scmrepo(scmhost_id, org, repo, branch) select 1, 'myorg', 'myproj', 'master'"
-$sc/sql "insert into scmpkg(scmrepo_id, pkg_id) select 1, 1 union select 1, 2"
+$sc/sql "insert into scmrepo(scmhost_id, org, repo, branch, sha) select 1, 'myorg', 'myproj', 'master', '0ab'"
+$sc/sql "insert into scmpkg(scmrepo_id, pkg_id, host, org, repo, branch, sha) select 1, 1, 'host', 'org', 'repo', 'branch', 'sha' union select 1, 2, 'host', 'org', 'repo', 'branch', 'sha'"
+
+$sc/sql "insert into obsproj(name,scmsync) select 'myhomeproject','src.mytest.org/myorg/myproj#master'"
 
 $sc/status
 sleep 3 # not sure why we need it

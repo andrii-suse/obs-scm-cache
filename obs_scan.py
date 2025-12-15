@@ -39,7 +39,7 @@ async def obs_scan(obsproj_dict):
                     name = k,
                     scmsync = obsproj_dict[k],
                 )
-                for k in obsproj_dict.keys()
+                for k in sorted(obsproj_dict)
             ],
         ))
         await conn.commit()
@@ -69,19 +69,27 @@ def main():
         obs_scan(obsproj_dict), loop
     ).result()
 
+    err = 0
     for v in set(obsproj_dict.values()):
-        print (f"git scan:{v}")
-        git_tree_scan(v, loop)
+        err1 = git_tree_scan(v, loop)
+        if err1:
+            err = err1
 
+    return err
 
 
 if __name__ == "__main__":
+    err = 0
     try:
-        main()
+        err = main()
     except Exception:
         import traceback
         print("Generic exception: " + traceback.format_exc())
+        err = 1
     except:
         print("Not an exception")
+        err = 1
+
+    exit(err)
 
 print("obs_scan done")
