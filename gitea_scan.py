@@ -10,6 +10,7 @@ import threading
 import urllib3
 import json
 import re
+from pathlib import PurePath
 from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.sql import text
@@ -18,9 +19,25 @@ import base64
 
 http = urllib3.PoolManager()
 
-def collect_branches_from_gitmodules(txt, default_host, default_org):
+def process_manifest(txt):
+    import yaml
+
+    manifest_yml = yaml.safe_load(txt)
+    if not manifest_yml:
+        return
+    subdirs = []
+    if manifest_yml.get('subdirectories'):
+        for newsubdir in manifest_yml['subdirectories']:
+            if newsubdir:
+                subdirs.append(newsubdir)
+    return subdirs
+
+def process_manifest_from_url(url):
+    txt = read_file_from_git_trees(url)
+    return process_manifest(txt)
+
+def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
     from configparser import ConfigParser
-    from pathlib import PurePath
 
     cfg = ConfigParser()
     cfg.read_string(txt)
@@ -33,23 +50,36 @@ def collect_branches_from_gitmodules(txt, default_host, default_org):
         path = cfg.get(section, "path")
         if not path:
             continue
-        name = PurePath(path).name
+        path_obj = PurePath(path)
+        name = str(path_obj.name)
         if not name:
             continue
+
+        if subdirs:
+            parent = str(path_obj.parent)
+            found = 0
+            for subdir in subdirs:
+                if parent == subdir:
+                    found = 1
+                    break
+            if not found:
+                continue
+
         url = cfg.get(section, "url")
         if not url:
             continue
 
         # match = re.match(r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", url)
-        match = re.match(r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?(\?[^#\/]*)?$", url)
+        match = re.match(r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?$", url)
         if not match:
             print(f"Unexpected url format {url}")
+            return
 
         repo = match.group(8)
         org  = match.group(7)
         host = match.group(6)
         # branch = match.group(5)
-        
+ 
         if not host or host == '/..':
             host = default_host
         if not org:
@@ -63,13 +93,18 @@ def collect_branches_from_gitmodules(txt, default_host, default_org):
         if cfg.has_option(section, "branch"):
             branch = cfg.get(section, "branch")
 
-        res[name] = (host, org, repo, branch)
+        res[path] = (host, org, repo, branch)
 
     return res
 
 
 
-def collect_branches_from_gitmodules_url(url, default_host, default_org):
+def collect_branches_from_gitmodules_url(url, subdirs, default_host, default_org):
+    txt = read_file_from_git_trees(url)
+    return collect_branches_from_gitmodules(txt, subdirs, default_host, default_org)
+
+
+def read_file_from_git_trees(url):
     response = http.request("GET", url)
     if response.status > 299 or response.status < 200:
         print(f"request {req_url} failed ({response.status}:{response.reason})")
@@ -99,9 +134,9 @@ def collect_branches_from_gitmodules_url(url, default_host, default_org):
         print(f"Unknown encoding '{encoding}' from {url}")
         return
 
+
     try:
-        txt = base64.standard_b64decode(content).decode('utf-8')
-        return collect_branches_from_gitmodules(txt, default_host, default_org)
+        return base64.standard_b64decode(content).decode('utf-8')
     except Exception:
         import traceback
 
@@ -112,6 +147,31 @@ def collect_branches_from_gitmodules_url(url, default_host, default_org):
         pass
 
 
+def git_tree_request(url):
+    response = http.request("GET", url)
+
+    if response.status > 299 or response.status < 200:
+        print(f"request {url} failed ({response.status}:{response.reason})")
+        return (None, None)
+
+    body = response.json()
+
+    if not body:
+        print("Empty response")
+        return (None, None)
+
+    sha  = body.get("sha")
+    if not sha:
+        print("Empty sha")
+        return (None, None)
+
+    body = body.get("tree")
+
+    if not body:
+        print("Empty tree")
+        return (None, None)
+
+    return (body, sha)
 
 
 def git_tree_scan(uri, loop):
@@ -133,35 +193,29 @@ def git_tree_scan(uri, loop):
         proto = "https://"
 
     req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/{branch}"
-    response = http.request("GET", req_url)
+    (body, sha) = git_tree_request(req_url)
 
-    if response.status > 299 or response.status < 200 and branch_guessed:
+    if not body and branch_guessed:
         req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/master"
-        response = http.request("GET", req_url)
-
-    if response.status > 299 or response.status < 200:
-        print(f"request {req_url} failed ({response.status}:{response.reason})")
-        return
-
-    body = response.json()
+        (body, sha) = git_tree_request(req_url)
 
     if not body:
-        print("Empty response")
-        return
-
-    sha  = body.get("sha")
-    if not sha:
-        print("Empty sha")
-        return
-
-    body = body.get("tree")
-
-    if not body:
-        print("Empty tree")
         return
 
     package_sha = {}
     _manifest_url = ""
+    
+    # first try to find _manifest
+    subdirs = None
+    for r in body:
+        path = r.get("path", "")
+        if path == "_manifest":
+            subdirs = process_manifest_from_url(r["url"])
+
+    # when we have subdirs we must get trees recursive
+    # TODO loop over git tree pages
+    if subdirs:
+        (body, sha) = git_tree_request(req_url + "?recursive=1")
 
     for r in body:
         path = r.get("path", "")
@@ -169,7 +223,20 @@ def git_tree_scan(uri, loop):
             continue
 
         if path == ".gitmodules":
-            submodule_branches = collect_branches_from_gitmodules_url(r["url"], host, org)
+            submodule_branches = collect_branches_from_gitmodules_url(r["url"], subdirs, host, org)
+            continue
+
+        if subdirs:
+            path_obj = PurePath(path)
+            parent = str(path_obj.parent)
+            found = 0
+            for subdir in subdirs:
+                if subdir == parent:
+                    found = 1
+                    break
+
+            if not found:
+                continue
 
         if r.get("mode", "0") == "160000" and r.get("type","") == "commit":
             package_sha[path] = r.get("sha","")
@@ -195,8 +262,10 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
             )
         )
         for pkg in sorted(pkgs_sha):
+            pkg_obj = PurePath(pkg)
+            name = str(pkg_obj.name)
             await conn.execute(
-                text(f"insert into pkg(name) select '{pkg}' on conflict do nothing")
+                text(f"insert into pkg(name) select '{name}' on conflict do nothing")
             )
             tpl = branches[pkg]
             if not tpl:
@@ -207,7 +276,7 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
             pkg_sha = pkgs_sha[pkg]
             await conn.execute(
                 text(
-                    f"insert into scmpkg(scmrepo_id, pkg_id, host, org, repo, branch, sha) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = '{host}') and org = '{org}' and repo = '{repo}' and branch = '{branch}' and sha = '{sha}' ), (select id from pkg where name = '{pkg}'), '{pkg_host}', '{pkg_org}', '{pkg_repo}', '{pkg_branch}', '{pkg_sha}' on conflict do nothing"
+                    f"insert into scmpkg(scmrepo_id, pkg_id, host, org, repo, branch, sha) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = '{host}') and org = '{org}' and repo = '{repo}' and branch = '{branch}' and sha = '{sha}' ), (select id from pkg where name = '{name}'), '{pkg_host}', '{pkg_org}', '{pkg_repo}', '{pkg_branch}', '{pkg_sha}' on conflict do nothing"
                 )
             )
 
