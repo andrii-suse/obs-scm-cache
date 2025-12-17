@@ -13,13 +13,15 @@ async def search(db_session: AsyncSession, q: str):
     sql = '''
 select
 obsproj.name,
-scmpkg.host as appliance, 
+scmhost.hostname as appliance,
 scmrepo.org as project_org, scmrepo.repo as project_repo, scmrepo.branch as project_branch,
+scmpkg.host as package_appliance,
 scmpkg.org as package_org, scmpkg.repo as package_repo, scmpkg.branch as package_branch, scmpkg.sha as package_sha
 from
 pkg
 join scmpkg on pkg_id = pkg.id
 join scmrepo on scmrepo_id = scmrepo.id
+join scmhost on scmhost_id = scmhost.id
 join obsproj on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch)
 where pkg.name = :pkg
 '''
