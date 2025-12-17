@@ -11,6 +11,12 @@ gt=$(environ gt)
 
 ##############
 echo setup repos
+$gt/gen_env
+(
+echo [api]
+echo DEFAULT_GIT_TREES_PER_PAGE=3
+) >> $gt/app.ini
+
 $gt/start
 $gt/bob/create
 
