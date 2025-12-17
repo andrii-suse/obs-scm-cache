@@ -152,26 +152,28 @@ def git_tree_request(url):
 
     if response.status > 299 or response.status < 200:
         print(f"request {url} failed ({response.status}:{response.reason})")
-        return (None, None)
+        return (None, None, None)
 
     body = response.json()
 
     if not body:
         print("Empty response")
-        return (None, None)
+        return (None, None, None)
 
     sha  = body.get("sha")
     if not sha:
         print("Empty sha")
-        return (None, None)
+        return (None, None, None)
+
+    truncated = body.get("truncated")
 
     body = body.get("tree")
 
     if not body:
         print("Empty tree")
-        return (None, None)
+        return (None, None, None)
 
-    return (body, sha)
+    return (body, sha, truncated)
 
 
 def git_tree_scan(uri, loop):
@@ -193,11 +195,11 @@ def git_tree_scan(uri, loop):
         proto = "https://"
 
     req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/{branch}"
-    (body, sha) = git_tree_request(req_url)
+    (body, sha, truncated) = git_tree_request(req_url)
 
     if not body and branch_guessed:
         req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/master"
-        (body, sha) = git_tree_request(req_url)
+        (body, sha, truncated) = git_tree_request(req_url)
 
     if not body:
         return
@@ -212,34 +214,48 @@ def git_tree_scan(uri, loop):
         if path == "_manifest":
             subdirs = process_manifest_from_url(r["url"])
 
+    recursive = 0
+    page = 0
     # when we have subdirs we must get trees recursive
     # TODO loop over git tree pages
     if subdirs:
-        (body, sha) = git_tree_request(req_url + "?recursive=1")
+        recursive = 1
+        (body, sha, truncated) = git_tree_request(req_url + "?recursive=1")
 
-    for r in body:
-        path = r.get("path", "")
-        if not path:
-            continue
-
-        if path == ".gitmodules":
-            submodule_branches = collect_branches_from_gitmodules_url(r["url"], subdirs, host, org)
-            continue
-
-        if subdirs:
-            path_obj = PurePath(path)
-            parent = str(path_obj.parent)
-            found = 0
-            for subdir in subdirs:
-                if subdir == parent:
-                    found = 1
-                    break
-
-            if not found:
+    while True:
+        for r in body:
+            path = r.get("path", "")
+            if not path:
                 continue
 
-        if r.get("mode", "0") == "160000" and r.get("type","") == "commit":
-            package_sha[path] = r.get("sha","")
+            if path == ".gitmodules":
+                submodule_branches = collect_branches_from_gitmodules_url(r["url"], subdirs, host, org)
+                continue
+
+            if subdirs:
+                path_obj = PurePath(path)
+                parent = str(path_obj.parent)
+                found = 0
+                for subdir in subdirs:
+                    if subdir == parent:
+                        found = 1
+                        break
+
+                if not found:
+                    continue
+
+            if r.get("mode", "0") == "160000" and r.get("type","") == "commit":
+                package_sha[path] = r.get("sha","")
+
+        if not truncated:
+            break
+        else:
+            page = page + 1
+            if recursive:
+                (body, sha, truncated) = git_tree_request(f"{req_url}?recursive=1&page={page}")
+            else:
+                (body, sha, truncated) = git_tree_request(f"{req_url}?page={page}")
+
 
     if package_sha:
         return asyncio.run_coroutine_threadsafe(
@@ -264,10 +280,14 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
         for pkg in sorted(pkgs_sha):
             pkg_obj = PurePath(pkg)
             name = str(pkg_obj.name)
+            
+            if name.startswith("."):
+                continue
+
             await conn.execute(
                 text(f"insert into pkg(name) select '{name}' on conflict do nothing")
             )
-            tpl = branches[pkg]
+            tpl = branches.get(pkg)
             if not tpl:
                 print(f"Submodule {pkg} has no details")
                 continue
