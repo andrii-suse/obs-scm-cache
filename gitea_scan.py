@@ -10,6 +10,7 @@ import threading
 import urllib3
 import json
 import re
+import os
 from pathlib import PurePath
 from typing import Annotated
 from fastapi import Depends
@@ -32,8 +33,8 @@ def process_manifest(txt):
                 subdirs.append(newsubdir)
     return subdirs
 
-def process_manifest_from_url(url):
-    txt = read_file_from_git_trees(url)
+def process_manifest_from_url(url, headers):
+    txt = read_file_from_git_trees(url, headers)
     return process_manifest(txt)
 
 def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
@@ -99,13 +100,14 @@ def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
 
 
 
-def collect_branches_from_gitmodules_url(url, subdirs, default_host, default_org):
-    txt = read_file_from_git_trees(url)
+def collect_branches_from_gitmodules_url(url, headers, subdirs, default_host, default_org):
+    txt = read_file_from_git_trees(url, headers)
     return collect_branches_from_gitmodules(txt, subdirs, default_host, default_org)
 
 
-def read_file_from_git_trees(url):
-    response = http.request("GET", url)
+def read_file_from_git_trees(url, headers):
+
+    response = http.request("GET", url, headers=headers)
     if response.status > 299 or response.status < 200:
         print(f"request {req_url} failed ({response.status}:{response.reason})")
         return
@@ -147,8 +149,8 @@ def read_file_from_git_trees(url):
         pass
 
 
-def git_tree_request(url):
-    response = http.request("GET", url)
+def git_tree_request(url, headers):
+    response = http.request("GET", url, headers=headers)
 
     if response.status > 299 or response.status < 200:
         print(f"request {url} failed ({response.status}:{response.reason})")
@@ -179,7 +181,8 @@ def git_tree_request(url):
 def git_tree_scan(uri, loop):
     match = re.match(r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", uri)
     if not match:
-        raise ValueError(f"Invalid repo url: {url}")
+        print(f"Invalid repo url: {uri}", file=sys.stderr)
+        return
 
     proto = match.group(1)
     host = match.group(2)
@@ -194,12 +197,17 @@ def git_tree_scan(uri, loop):
     if not proto:
         proto = "https://"
 
+    headers = None
+    token = os.environ.get("OBS_SCM_CACHE_GITEA_TOKEN", "")
+    if token:
+        headers = {"Authorization": f"token {token}"}
+
     req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/{branch}"
-    (body, sha, truncated) = git_tree_request(req_url)
+    (body, sha, truncated) = git_tree_request(req_url, headers)
 
     if not body and branch_guessed:
         req_url = f"{proto}{host}/api/v1/repos/{org}/{repo}/git/trees/master"
-        (body, sha, truncated) = git_tree_request(req_url)
+        (body, sha, truncated) = git_tree_request(req_url, headers)
 
     if not body:
         return
@@ -212,7 +220,7 @@ def git_tree_scan(uri, loop):
     for r in body:
         path = r.get("path", "")
         if path == "_manifest":
-            subdirs = process_manifest_from_url(r["url"])
+            subdirs = process_manifest_from_url(r["url"], headers)
 
     recursive = 0
     page = 0
@@ -220,7 +228,7 @@ def git_tree_scan(uri, loop):
     # TODO loop over git tree pages
     if subdirs:
         recursive = 1
-        (body, sha, truncated) = git_tree_request(req_url + "?recursive=1")
+        (body, sha, truncated) = git_tree_request(req_url + "?recursive=1", headers)
 
     while True:
         for r in body:
@@ -229,7 +237,7 @@ def git_tree_scan(uri, loop):
                 continue
 
             if path == ".gitmodules":
-                submodule_branches = collect_branches_from_gitmodules_url(r["url"], subdirs, host, org)
+                submodule_branches = collect_branches_from_gitmodules_url(r["url"], headers, subdirs, host, org)
                 continue
 
             if subdirs:
@@ -252,9 +260,9 @@ def git_tree_scan(uri, loop):
         else:
             page = page + 1
             if recursive:
-                (body, sha, truncated) = git_tree_request(f"{req_url}?recursive=1&page={page}")
+                (body, sha, truncated) = git_tree_request(f"{req_url}?recursive=1&page={page}", headers)
             else:
-                (body, sha, truncated) = git_tree_request(f"{req_url}?page={page}")
+                (body, sha, truncated) = git_tree_request(f"{req_url}?page={page}", headers)
 
 
     if package_sha:
@@ -289,7 +297,7 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
             )
             tpl = branches.get(pkg)
             if not tpl:
-                print(f"Submodule {pkg} has no details")
+                print(f"Submodule {pkg} of {org}/{repo} has no details")
                 continue
 
             (pkg_host, pkg_org, pkg_repo, pkg_branch) = tpl
