@@ -10,7 +10,10 @@ from app.config import settings
 from app.database import sessionmanager
 from os import environ
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG if settings.log_level == "DEBUG" else logging.INFO)
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.DEBUG if settings.log_level == "DEBUG" else logging.INFO,
+)
 
 
 @asynccontextmanager

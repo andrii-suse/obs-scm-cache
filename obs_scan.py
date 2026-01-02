@@ -25,23 +25,19 @@ async def obs_scan(obsproj_dict):
         return
 
     async for conn in get_db_session():
-        await conn.execute(
-            text(
-                f"delete from obsproj where 1=1"
+        await conn.execute(text("delete from obsproj where 1=1"))
+
+        await conn.run_sync(
+            lambda session: session.bulk_save_objects(
+                [
+                    Obsproj(
+                        name=k,
+                        scmsync=obsproj_dict[k],
+                    )
+                    for k in sorted(obsproj_dict)
+                ],
             )
         )
-        # sql = '''insert into obsproj(name, scmsync) select $1,$2;'''
-        # await conn.execute_many(sql, obsproj_dict.items())
-
-        await conn.run_sync(lambda session: session.bulk_save_objects(
-            [
-                Obsproj(
-                    name = k,
-                    scmsync = obsproj_dict[k],
-                )
-                for k in sorted(obsproj_dict)
-            ],
-        ))
         await conn.commit()
         break
 
@@ -55,19 +51,16 @@ def main():
     t = threading.Thread(target=thr, args=(loop,), daemon=True)
     t.start()
 
-
     obsproj_dict = {}
 
     for line in sys.stdin:
         line = line.strip().split(",")
-        if len(line)>1:
+        if len(line) > 1:
             k = line[0]
             v = line[1]
             obsproj_dict[k] = v
 
-    asyncio.run_coroutine_threadsafe(
-        obs_scan(obsproj_dict), loop
-    ).result()
+    asyncio.run_coroutine_threadsafe(obs_scan(obsproj_dict), loop).result()
 
     err = 0
     for v in set(obsproj_dict.values()):
@@ -84,6 +77,7 @@ if __name__ == "__main__":
         err = main()
     except Exception:
         import traceback
+
         print("Generic exception: " + traceback.format_exc())
         err = 1
     except:

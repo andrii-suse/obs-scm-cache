@@ -13,7 +13,7 @@ create table if not exists scmrepo (
     sha char(64)     not null,
     last_scan_at timestamp,
     deleted_at   timestamp,
-    unique(scmhost_id, org, repo, branch, sha)
+    unique(scmhost_id, org, repo, branch)
 );
 
 create table if not exists pkg (
@@ -38,4 +38,4 @@ create table if not exists scmpkg (
 create table if not exists obsproj (
     name  varchar(512) PRIMARY KEY,
     scmsync varchar(512) not null
-)
+);

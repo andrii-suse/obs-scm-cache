@@ -64,7 +64,7 @@ $sc/sql "select count(*) from scmrepo"
 $sc/sql "select pkg.name, count(*) cnt, string_agg(obsproj.name, ',') from scmpkg join scmrepo on scmrepo_id = scmrepo.id join obsproj on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch) join pkg on pkg.id = pkg_id group by pkg.id, pkg.name order by cnt desc" | head
 
 $sc/start
-sleep 2
+sleep 3
 $sc/curl /rest/package/search?q=7zip | grep -o '"appliance":"src.opensuse.org"'
 
 echo success

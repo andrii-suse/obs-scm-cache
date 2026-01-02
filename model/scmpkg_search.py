@@ -1,16 +1,24 @@
 from typing import Optional
 import datetime
 
-from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
 from model.model import Scmpkg, Pkg, Scmrepo
 
+
 async def search(db_session: AsyncSession, q: str):
 
-    sql = '''
+    sql = """
 select
 obsproj.name,
 scmhost.hostname as appliance,
@@ -24,8 +32,42 @@ join scmrepo on scmrepo_id = scmrepo.id
 join scmhost on scmhost_id = scmhost.id
 join obsproj on obsproj.scmsync like concat('%',scmrepo.org,'/',scmrepo.repo,'%','#',scmrepo.branch)
 where pkg.name = :pkg
-'''
+and scmpkg.deleted_at is NULL
+"""
 
     cursor = await db_session.execute(text(sql), {"pkg": q})
     rows = cursor.mappings().all()
     return rows
+
+
+async def select_last_scan_details_for_scmrepo(
+    db_session: AsyncSession, scmhost: str, org: str, repo: str, branch: str
+):
+
+    sql = """
+select
+scmrepo.id,
+scmrepo.last_scan_at,
+scmrepo.sha,
+max(scmpkg.last_seen_at) as last_seen_package_at
+from
+scmrepo
+left join scmpkg on scmrepo_id = scmrepo.id
+where
+scmhost_id = (select id from scmhost where hostname = :scmhost)
+and scmrepo.org    = :org
+and scmrepo.repo   = :repo
+and scmrepo.branch = :branch
+and scmpkg.deleted_at is NULL
+group by scmrepo.id, scmrepo.last_scan_at, scmrepo.sha
+"""
+
+    cursor = await db_session.execute(
+        text(sql), {"scmhost": scmhost, "org": org, "repo": repo, "branch": branch}
+    )
+    rows = cursor.mappings().all()
+    if not rows:
+        return None
+    else:
+        row = rows[0]
+        return row

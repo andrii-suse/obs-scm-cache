@@ -4,6 +4,7 @@ import sys
 from app.config import settings
 from app.database import get_db_session
 from model.model import Pkg
+from model.scmpkg_search import select_last_scan_details_for_scmrepo
 
 import asyncio
 import threading
@@ -20,6 +21,7 @@ import base64
 
 http = urllib3.PoolManager()
 
+
 def process_manifest(txt):
     import yaml
 
@@ -27,15 +29,17 @@ def process_manifest(txt):
     if not manifest_yml:
         return
     subdirs = []
-    if manifest_yml.get('subdirectories'):
-        for newsubdir in manifest_yml['subdirectories']:
+    if manifest_yml.get("subdirectories"):
+        for newsubdir in manifest_yml["subdirectories"]:
             if newsubdir:
                 subdirs.append(newsubdir)
     return subdirs
 
+
 def process_manifest_from_url(url, headers):
     txt = read_file_from_git_trees(url, headers)
     return process_manifest(txt)
+
 
 def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
     from configparser import ConfigParser
@@ -71,17 +75,20 @@ def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
             continue
 
         # match = re.match(r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", url)
-        match = re.match(r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?$", url)
+        match = re.match(
+            r"^(((https?:\/\/)?(.*@)?([^\/]+|..(\/..)?))\/([^\/]+)|..)\/([^\/\#]+?)(\.git)?$",
+            url,
+        )
         if not match:
             print(f"Unexpected url format {url}")
             return
 
         repo = match.group(8)
-        org  = match.group(7)
+        org = match.group(7)
         host = match.group(6)
         # branch = match.group(5)
- 
-        if not host or host == '/..':
+
+        if not host or host == "/..":
             host = default_host
         if not org:
             org = default_org
@@ -90,7 +97,7 @@ def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
             continue
 
         branch = ""
-        
+
         if cfg.has_option(section, "branch"):
             branch = cfg.get(section, "branch")
 
@@ -99,8 +106,9 @@ def collect_branches_from_gitmodules(txt, subdirs, default_host, default_org):
     return res
 
 
-
-def collect_branches_from_gitmodules_url(url, headers, subdirs, default_host, default_org):
+def collect_branches_from_gitmodules_url(
+    url, headers, subdirs, default_host, default_org
+):
     txt = read_file_from_git_trees(url, headers)
     return collect_branches_from_gitmodules(txt, subdirs, default_host, default_org)
 
@@ -118,7 +126,7 @@ def read_file_from_git_trees(url, headers):
         print(f"Empty response from {url}")
         return
 
-    if body.get("size",-1) == 0:
+    if body.get("size", -1) == 0:
         return
 
     content = body.get("content", "")
@@ -127,7 +135,7 @@ def read_file_from_git_trees(url, headers):
         print(f"Empty content from {url}")
         return
 
-    encoding = body.get("encoding","")
+    encoding = body.get("encoding", "")
     if not encoding:
         print(f"Empty encoding from {url}")
         return
@@ -136,9 +144,8 @@ def read_file_from_git_trees(url, headers):
         print(f"Unknown encoding '{encoding}' from {url}")
         return
 
-
     try:
-        return base64.standard_b64decode(content).decode('utf-8')
+        return base64.standard_b64decode(content).decode("utf-8")
     except Exception:
         import traceback
 
@@ -162,7 +169,7 @@ def git_tree_request(url, headers):
         print("Empty response")
         return (None, None, None)
 
-    sha  = body.get("sha")
+    sha = body.get("sha")
     if not sha:
         print("Empty sha")
         return (None, None, None)
@@ -179,7 +186,10 @@ def git_tree_request(url, headers):
 
 
 def git_tree_scan(uri, loop):
-    match = re.match(r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", uri)
+    match = re.match(
+        r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$",
+        uri,
+    )
     if not match:
         print(f"Invalid repo url: {uri}", file=sys.stderr)
         return
@@ -214,7 +224,7 @@ def git_tree_scan(uri, loop):
 
     package_sha = {}
     _manifest_url = ""
-    
+
     # first try to find _manifest
     subdirs = None
     for r in body:
@@ -237,7 +247,9 @@ def git_tree_scan(uri, loop):
                 continue
 
             if path == ".gitmodules":
-                submodule_branches = collect_branches_from_gitmodules_url(r["url"], headers, subdirs, host, org)
+                submodule_branches = collect_branches_from_gitmodules_url(
+                    r["url"], headers, subdirs, host, org
+                )
                 continue
 
             if subdirs:
@@ -252,48 +264,76 @@ def git_tree_scan(uri, loop):
                 if not found:
                     continue
 
-            if r.get("mode", "0") == "160000" and r.get("type","") == "commit":
-                package_sha[path] = r.get("sha","")
+            if r.get("mode", "0") == "160000" and r.get("type", "") == "commit":
+                package_sha[path] = r.get("sha", "")
 
         if not truncated:
             break
         else:
             page = page + 1
             if recursive:
-                (body, sha, truncated) = git_tree_request(f"{req_url}?recursive=1&page={page}", headers)
+                (body, sha, truncated) = git_tree_request(
+                    f"{req_url}?recursive=1&page={page}", headers
+                )
             else:
-                (body, sha, truncated) = git_tree_request(f"{req_url}?page={page}", headers)
-
+                (body, sha, truncated) = git_tree_request(
+                    f"{req_url}?page={page}", headers
+                )
 
     if package_sha:
         return asyncio.run_coroutine_threadsafe(
-            scm_db_fill(host, org, repo, branch, sha, package_sha, submodule_branches), loop
+            scm_db_fill(host, org, repo, branch, sha, package_sha, submodule_branches),
+            loop,
         ).result()
 
 
 async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
 
     async for conn in get_db_session():
-        # TODO!!!! how to use parameter here to avoid SQL injection???
+        last_update = ""
+
         await conn.execute(
-            text(
-                f"insert into scmhost(hostname) select '{host}' on conflict do nothing;"
-            )
+            text("insert into scmhost(hostname) select :host on conflict do nothing;"),
+            {"host": host},
         )
-        await conn.execute(
-            text(
-                f"insert into scmrepo(scmhost_id, org, repo, branch, sha) select (select id from scmhost where hostname = '{host}'), '{org}', '{repo}', '{branch}', '{sha}' on conflict do nothing"
+
+        scmrepo_id = None
+        last_seen_package_at = None
+
+        # get info from last scan
+        row = await select_last_scan_details_for_scmrepo(conn, host, org, repo, branch)
+
+        if row:
+            if row["sha"] == sha:
+                # we already scanned this sha
+                continue
+
+            last_seen_package_at = row.last_seen_package_at
+            scmrepo_id = row.id
+            await conn.execute(
+                text(
+                    "update scmrepo set sha = :sha, last_scan_at = now() where scmhost_id = :scmrepo_id"
+                ),
+                {"sha": sha, "scmrepo_id": scmrepo_id},
             )
-        )
+        else:
+            await conn.execute(
+                text(
+                    "insert into scmrepo(scmhost_id, org, repo, branch, sha) select (select id from scmhost where hostname = :host), :org, :repo, :branch, :sha"
+                ),
+                {"host": host, "org": org, "repo": repo, "branch": branch, "sha": sha},
+            )
+
         for pkg in sorted(pkgs_sha):
             pkg_obj = PurePath(pkg)
             name = str(pkg_obj.name)
-            
+
             if name.startswith("."):
                 continue
 
             await conn.execute(
-                text(f"insert into pkg(name) select '{name}' on conflict do nothing")
+                text("insert into pkg(name) select :name on conflict do nothing"),
+                {"name": name},
             )
             tpl = branches.get(pkg)
             if not tpl:
@@ -302,10 +342,35 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
 
             (pkg_host, pkg_org, pkg_repo, pkg_branch) = tpl
             pkg_sha = pkgs_sha[pkg]
+
             await conn.execute(
                 text(
-                    f"insert into scmpkg(scmrepo_id, pkg_id, host, org, repo, branch, sha) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = '{host}') and org = '{org}' and repo = '{repo}' and branch = '{branch}' and sha = '{sha}' ), (select id from pkg where name = '{name}'), '{pkg_host}', '{pkg_org}', '{pkg_repo}', '{pkg_branch}', '{pkg_sha}' on conflict do nothing"
-                )
+                    "insert into scmpkg(scmrepo_id, pkg_id, host, org, repo, branch, sha, last_seen_at) select (select id from scmrepo where scmhost_id in (select id from scmhost where hostname = :host) and org = :org and repo = :repo and branch = :branch and sha = :sha), (select id from pkg where name = :name), :pkg_host, :pkg_org, :pkg_repo, :pkg_branch, :pkg_sha, now() on conflict(scmrepo_id, pkg_id)  do update set host = :pkg_host, org = :pkg_org, repo = :pkg_repo, branch = :pkg_branch, sha = :pkg_sha, last_seen_at = now(), deleted_at = NULL"
+                ),
+                {
+                    "host": host,
+                    "org": org,
+                    "repo": repo,
+                    "branch": branch,
+                    "sha": sha,
+                    "name": name,
+                    "pkg_host": pkg_host,
+                    "pkg_org": pkg_org,
+                    "pkg_repo": pkg_repo,
+                    "pkg_branch": pkg_branch,
+                    "pkg_sha": pkg_sha,
+                },
+            )
+
+        if last_seen_package_at:
+            await conn.execute(
+                text(
+                    "update scmpkg set deleted_at = now() where scmrepo_id = :scmrepo_id and last_seen_at <= :last_seen_package_at"
+                ),
+                {
+                    "scmrepo_id": scmrepo_id,
+                    "last_seen_package_at": last_seen_package_at,
+                },
             )
 
         await conn.commit()
@@ -333,6 +398,7 @@ if __name__ == "__main__":
         err = main(url)
     except Exception:
         import traceback
+
         print("Generic exception: " + traceback.format_exc())
         err = 1
     except:

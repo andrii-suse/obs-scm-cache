@@ -74,7 +74,7 @@ git branch -m mybranch
 git submodule add -b nope http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo2
 mkdir packs
 mkdir deps
-git submodule add -b dev http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo1 packs/myrepo1
+git submodule add -b dev http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo1 packs/myrepo1-dev
 git submodule add -b main http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo2 packs/myrepo2
 git submodule add -b main http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo1 deps/myrepo1
 git submodule add -b main http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo2 deps/myrepo2-main
@@ -101,11 +101,10 @@ cat .gitmodules
 
 
 $sc/status
-sleep 1 # not sure why we need it
+# sleep 1 # not sure why we need it
 
 $sc/gitea_scan http://$($gt/print_address)/products/myproduct1#mybranch
 
-set -x
 
 $sc/sql_test 1 == "select count(*) from scmhost"
 $sc/sql_test $($gt/print_address) == "select hostname from scmhost"
@@ -117,7 +116,70 @@ $sc/sql "select * from pkg"
 
 $sc/sql "select * from scmpkg"
 
-$sc/sql_test 4 == "select count(*) from scmpkg"
+$sc/sql_test 5 == "select count(*) from scmpkg"
 $sc/sql_test 0 == "select count(*) from scmpkg where branch = 'nope'"
-$sc/sql_test 4 == "select count(*) from pkg"
+$sc/sql_test 5 == "select count(*) from pkg"
+
+$sc/sql "insert into obsproj(name,scmsync) select 'myhomeproject','$($gt/print_address)/products/myproduct1#mybranch'"
+
+$sc/curl "/rest/package/search?q=myrepo2-tst"  | grep myproduct1 | grep mybranch
+$sc/curl "/rest/package/search?q=myrepo2-main" | grep myproduct1 | grep mybranch
+$sc/curl "/rest/package/search?q=myrepo2"      | grep myproduct1 | grep mybranch
+# make sure no 'nope' package
+rc=0
+$sc/curl "/rest/package/search?q=myrepo2"      | grep nope || rc=$?
+test $rc -gt 0
+
+
+echo do some commits to the dev project
+(
+cd $sc/dt/myrepo1
+git checkout main
+echo MORE README >> README.txt
+git add README.txt
+
+git commit -m 'More README'
+git push origin main
+)
+
+echo update myrepo1 to the latest commit in myproduct1
+(
+cd $sc/dt/myproduct1/deps/myrepo1
+git pull
+)
+
+
+echo now delete one package and add another
+
+(
+cd $sc/dt/myproduct1
+git add deps/myrepo1
+git rm myrepo2
+git submodule add -b nope http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo2 packs/myrepo2-nope
+git rm packs/myrepo2
+git rm deps/myrepo2-tst
+git commit -m 'Tweak submodules'
+git push origin mybranch
+)
+
+myrepo1_old_sha=$($sc/sql "select sha from scmpkg where pkg_id = (select id from pkg where name = 'myrepo1') and branch = 'main'")
+
+test "$myrepo1_old_sha" != ""
+
+echo do rescan
+$sc/gitea_scan http://$($gt/print_address)/products/myproduct1#mybranch
+
+echo check sha for repo1 has changed
+$sc/sql_test "$myrepo1_old_sha" != "select sha from scmpkg where pkg_id = (select id from pkg where name = 'myrepo1') and branch = 'main'"
+
+$sc/curl "/rest/package/search?q=myrepo2-nope" | grep myproduct1 | grep mybranch
+$sc/curl "/rest/package/search?q=myrepo2-main" | grep myproduct1 | grep mybranch
+rc=0
+$sc/curl "/rest/package/search?q=myrepo2"      | grep myproduct1 || rc=$?
+test $rc -gt 0
+rc=0
+$sc/curl "/rest/package/search?q=myrepo2-tst"  | grep myproduct1 || rc=$?
+test $rc -gt 0
+
+
 echo success
