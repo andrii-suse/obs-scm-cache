@@ -12,16 +12,27 @@ CMD_LIST_PROJECTS = f"""
 {OSC_COMMAND} api '/search/project?match=scmsync' | grep -oE 'project name="[^"]+"' | grep -v home: | grep -v Pull | grep -v PR | grep -v PTF | grep -oE '".*"' | grep -oE '[^\"]+'
 """
 
-prj_res = subprocess.run(CMD_LIST_PROJECTS, stdout=subprocess.PIPE, shell=True, check=True)
+prj_res = subprocess.run(
+    CMD_LIST_PROJECTS, stdout=subprocess.PIPE, shell=True, check=True
+)
 
-err=0
+err = 0
 
-for prj in prj_res.stdout.decode('utf-8').splitlines():
+for prj in prj_res.stdout.decode("utf-8").splitlines():
     try:
-        scmsync_cmd = f"{OSC_COMMAND} meta prj {prj} | grep scmsync | grep -oE 'http[^\\<]*'"
-        url = subprocess.run(scmsync_cmd, stdout=subprocess.PIPE, shell=True, check=True).stdout.decode('utf-8').splitlines()[0]
+        scmsync_cmd = (
+            f"{OSC_COMMAND} meta prj {prj} | grep scmsync | grep -oE 'http[^\\<]*'"
+        )
+        url = (
+            subprocess.run(scmsync_cmd, stdout=subprocess.PIPE, shell=True, check=True)
+            .stdout.decode("utf-8")
+            .splitlines()[0]
+        )
 
-        match = re.match(r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$", url)
+        match = re.match(
+            r"^(https?://)?([^/]+)/([^/]+)/([^\/\#\.]+?)(\.git)?(\?[^#\/]*)?(\#([^\/#]+))?$",
+            url,
+        )
 
         if match:
             org = match.group(3)
@@ -32,15 +43,21 @@ for prj in prj_res.stdout.decode('utf-8').splitlines():
                 branch_cmd = f"""
 {GIT_OBS_COMMAND} -q api /repos/{org}/{repo} 2>/dev/null | grep default_branch | head -n 1 | grep -oE ': ".*"' | grep -oE '[^\\ :\\"]+'
 """
-                branch = subprocess.run(branch_cmd, stdout=subprocess.PIPE, shell=True, check=True).stdout.decode('utf-8').splitlines()[0]
+                branch = (
+                    subprocess.run(
+                        branch_cmd, stdout=subprocess.PIPE, shell=True, check=True
+                    )
+                    .stdout.decode("utf-8")
+                    .splitlines()[0]
+                )
                 url = f"{url}#{branch}"
     except Exception:
         import traceback
-        print(f"Error parsing {prj}:", file = sys.stderr)
-        print("Generic exception: " + traceback.format_exc(), file = sys.stderr)
+
+        print(f"Error parsing {prj}:", file=sys.stderr)
+        print("Generic exception: " + traceback.format_exc(), file=sys.stderr)
         err = 1
-    
+
     print(f"{prj},{url}")
 
 exit(err)
-

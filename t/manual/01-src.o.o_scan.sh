@@ -54,7 +54,7 @@ $sc/sql "select name from pkg"
 
 $sc/sql_test 10 == "select count(*) from scmpkg"
 
-sleep 2
+sleep 3 
 $sc/curl /rest/package/search?q=cockpit
 
 echo success
