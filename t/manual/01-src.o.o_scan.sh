@@ -52,9 +52,12 @@ $sc/sql_test cockpit/_ObsPrj == "select concat(org,'/',repo) from scmrepo"
 
 $sc/sql "select name from pkg"
 
-$sc/sql_test 10 == "select count(*) from scmpkg"
+$sc/sql_test 11 == "select count(*) from scmpkg"
 
-sleep 3 
+$sc/sql_test abrooks == "select min(maintainer) from scmrepo_maintainer"
+
+sleep 3
 $sc/curl /rest/package/search?q=cockpit
+
 
 echo success

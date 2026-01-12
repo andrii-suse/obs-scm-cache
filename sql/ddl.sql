@@ -6,7 +6,7 @@ create table if not exists scmhost (
 
 create table if not exists scmrepo (
     id serial NOT NULL PRIMARY KEY,    
-    scmhost_id int references scmhost,
+    scmhost_id bigint NOT NULL references scmhost,
     org varchar(512) not null,
     repo varchar(512) not null,
     branch varchar(512) not null,
@@ -23,8 +23,8 @@ create table if not exists pkg (
 
 create table if not exists scmpkg (
     id serial NOT NULL PRIMARY KEY,    
-    scmrepo_id   int references scmrepo,
-    pkg_id       int references pkg,
+    scmrepo_id   bigint NOT NULL references scmrepo,
+    pkg_id       bigint NOT NULL references pkg,
     host   varchar(512) not null,
     org    varchar(512) not null,
     repo   varchar(512) not null,
@@ -38,4 +38,21 @@ create table if not exists scmpkg (
 create table if not exists obsproj (
     name  varchar(512) PRIMARY KEY,
     scmsync varchar(512) not null
+);
+
+create table if not exists scmrepo_maintainer (
+    scmrepo_id bigint NOT NULL references scmrepo,
+    maintainer varchar(256),
+    last_seen_at timestamp,
+    deleted_at   timestamp,
+    unique(scmrepo_id, maintainer)
+);
+
+create table if not exists scmpkg_maintainer (
+    scmrepo_id bigint NOT NULL references scmrepo,
+    maintainer varchar(256),
+    pkg        varchar(256),
+    last_seen_at timestamp,
+    deleted_at   timestamp,
+    unique(scmrepo_id, maintainer, pkg)
 );

@@ -113,6 +113,14 @@ def collect_branches_from_gitmodules_url(
     return collect_branches_from_gitmodules(txt, subdirs, default_host, default_org)
 
 
+def collect_maintainership_from_url(url, headers):
+    import json
+
+    txt = read_file_from_git_trees(url, headers)
+    return json.loads(txt)
+
+
+
 def read_file_from_git_trees(url, headers):
 
     response = http.request("GET", url, headers=headers)
@@ -227,10 +235,13 @@ def git_tree_scan(uri, loop):
 
     # first try to find _manifest
     subdirs = None
+    maintainership_url = None
     for r in body:
         path = r.get("path", "")
         if path == "_manifest":
             subdirs = process_manifest_from_url(r["url"], headers)
+        if path == "_maintainership.json":
+            maintainership_url = r["url"]
 
     recursive = 0
     page = 0
@@ -280,14 +291,34 @@ def git_tree_scan(uri, loop):
                     f"{req_url}?page={page}", headers
                 )
 
+    maintainership_obj = None
     if package_sha:
+        if maintainership_url:
+            try:
+                maintainership_obj = collect_maintainership_from_url(
+                    maintainership_url, headers
+                )
+            except Exception as e:
+                print(f"Exception {e} during parsing _maintainership.json from {uri}")
+
         return asyncio.run_coroutine_threadsafe(
-            scm_db_fill(host, org, repo, branch, sha, package_sha, submodule_branches),
+            scm_db_fill(
+                host,
+                org,
+                repo,
+                branch,
+                sha,
+                package_sha,
+                submodule_branches,
+                maintainership_obj,
+            ),
             loop,
         ).result()
 
 
-async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
+async def scm_db_fill(
+    host, org, repo, branch, sha, pkgs_sha, branches, maintainership_obj
+):
 
     async for conn in get_db_session():
         last_update = ""
@@ -323,6 +354,9 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
                 ),
                 {"host": host, "org": org, "repo": repo, "branch": branch, "sha": sha},
             )
+            row = await select_last_scan_details_for_scmrepo(conn, host, org, repo, branch)
+            scmrepo_id = row.id
+
 
         for pkg in sorted(pkgs_sha):
             pkg_obj = PurePath(pkg)
@@ -372,6 +406,53 @@ async def scm_db_fill(host, org, repo, branch, sha, pkgs_sha, branches):
                     "last_seen_package_at": last_seen_package_at,
                 },
             )
+
+        if maintainership_obj:
+            for pkg in sorted(maintainership_obj):
+                for maintainer in maintainership_obj[pkg]:
+                    if maintainer:
+                        if pkg:
+                            await conn.execute(
+                                text(
+                                    "insert into scmpkg_maintainer(scmrepo_id, maintainer, pkg, last_seen_at) select :scmrepo_id, :maintainer, :pkg, now() on conflict(scmrepo_id, maintainer, pkg) do update set last_seen_at = now(), deleted_at = NULL"
+                                ),
+                                {
+                                    "scmrepo_id": scmrepo_id,
+                                    "maintainer": maintainer,
+                                    "pkg": pkg,
+                                },
+                            )
+                        else:
+                            await conn.execute(
+                                text(
+                                    "insert into scmrepo_maintainer(scmrepo_id, maintainer, last_seen_at) select :scmrepo_id, :maintainer, now() on conflict(scmrepo_id, maintainer) do update set last_seen_at = now(), deleted_at = NULL"
+                                ),
+                                {
+                                    "scmrepo_id": scmrepo_id,
+                                    "maintainer": maintainer,
+                                },
+                            )
+
+
+            if last_seen_package_at:
+                await conn.execute(
+                    text(
+                        "update scmrepo_maintainer set deleted_at = now() where scmrepo_id = :scmrepo_id and last_seen_at <= :last_seen_package_at"
+                    ),
+                    {
+                        "scmrepo_id": scmrepo_id,
+                        "last_seen_package_at": last_seen_package_at,
+                    },
+                )
+                await conn.execute(
+                    text(
+                        "update scmpkg_maintainer set deleted_at = now() where scmrepo_id = :scmrepo_id and last_seen_at <= :last_seen_package_at"
+                    ),
+                    {
+                        "scmrepo_id": scmrepo_id,
+                        "last_seen_package_at": last_seen_package_at,
+                    },
+                )
 
         await conn.commit()
         break
