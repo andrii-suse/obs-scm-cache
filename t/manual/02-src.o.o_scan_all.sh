@@ -66,5 +66,6 @@ $sc/sql "select pkg.name, count(*) cnt, string_agg(obsproj.name, ',') from scmpk
 $sc/start
 sleep 3
 $sc/curl /rest/package/search?q=7zip | grep -o '"appliance":"src.opensuse.org"'
+$sc/curl /rest/package/owner?q=7zip
 
 echo success

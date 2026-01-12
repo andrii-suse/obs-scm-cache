@@ -1,7 +1,7 @@
 #!lib/test-in-container-environ.sh
-set -e
+set -ex
 
-test -n "${OBS_SCM_CACHE_GITEA_TOKEN}" || exit 1
+test -n "${OBS_SCM_CACHE_GITEA_TOKEN}" || { echo OBS_SCM_CACHE_GITEA_TOKEN is not set; exit; }
 
 sc=$(environ sc $PWD)
 $sc/start

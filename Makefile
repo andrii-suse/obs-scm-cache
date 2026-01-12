@@ -12,3 +12,8 @@ test_container_manual:
 test_manual:
 	( for f in t/manual/*.sh ; do bash -x $$f && continue; echo FAIL: $$f; exit 1; done )
 
+black:
+	black *.py
+	black **/*.py
+	black **/**/*.py
+	black **/**/**/*.py

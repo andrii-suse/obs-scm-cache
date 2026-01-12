@@ -40,6 +40,9 @@ git clone http://$(cat $gt/bob/token.txt)@$($gt/print_address)/products/myproduc
 cd $sc/dt/myproduct1
 git branch -m mybranch
 git submodule add http://$(cat $gt/bob/token.txt)@$($gt/print_address)/bobshome/myrepo
+
+echo '{"": ["myuser1", "myuser2"], "myrepo": ["myuser3", "myuser1"]}' > _maintainership.json
+
 git add *
 git config user.name "Geeko Packager"
 git config user.email "email@example.com"
@@ -65,5 +68,9 @@ $sc/sql_test products/myproduct1 == "select concat(org,'/',repo) from scmrepo"
 
 $sc/sql_test 1 == "select count(*) from scmpkg"
 $sc/sql_test myrepo == "select name from pkg"
+
+$sc/sql_test 2 == "select count(*) from scmpkg_maintainer"
+$sc/sql_test myuser1 == "select min(maintainer) from scmpkg_maintainer"
+$sc/sql_test myuser3 == "select max(maintainer) from scmpkg_maintainer"
 
 echo success
